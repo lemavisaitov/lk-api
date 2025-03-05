@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/pkg/errors"
 	"net/http"
 	"sync"
 )
@@ -13,20 +12,29 @@ type user struct {
 	Password string `json:"password"`
 	Name     string `json:"name"`
 	Age      int    `json:"age"`
-	mu       sync.RWMutex
 }
 
-var userMap = make(map[uuid.UUID]*user)
-var userLoginMap = make(map[string]uuid.UUID)
+type UserStorage struct {
+	users      map[uuid.UUID]user
+	userLogins map[string]uuid.UUID
+	mu         sync.RWMutex
+}
+
+type Service struct {
+	storage *UserStorage
+}
+
+const errUserNotFound = "user not found"
 
 func main() {
-	router := gin.Default()
+	service := NewService()
 
-	router.POST("/user/signup", signup)
-	router.GET("user/:id", getUser)
-	router.POST("/user/login", login)
-	router.PUT("/user/:id", updateUser)
-	router.DELETE("/user/:id", deleteUser)
+	router := gin.Default()
+	router.POST("/user/signup", service.signup)
+	router.GET("user/:id", service.getUser)
+	router.POST("/user/login", service.login)
+	router.PUT("/user/:id", service.updateUser)
+	router.DELETE("/user/:id", service.deleteUser)
 
 	server := &http.Server{
 		Addr:    ":8080",
@@ -39,106 +47,124 @@ func main() {
 
 }
 
-func signup(c *gin.Context) {
-	var usr *user
+func (s *Service) signup(c *gin.Context) {
+	var usr user
 	if err := c.ShouldBindJSON(&usr); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if _, ok := userLoginMap[usr.Login]; ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Such a login already exists"})
+	if usr.Password == "" || usr.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "password or name is empty"})
+		return
+	}
+	if _, ok := s.storage.userLogins[usr.Login]; ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "login already exists"})
 		return
 	}
 	id := uuid.New()
-	userLoginMap[usr.Login] = id
-	userMap[id] = usr
+
+	s.storage.mu.Lock()
+	s.storage.userLogins[usr.Login] = id
+	s.storage.users[id] = usr
+	s.storage.mu.Unlock()
+
 	c.JSON(http.StatusOK, gin.H{"id": id})
 }
 
-func getUser(c *gin.Context) {
+func (s *Service) getUser(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	usr, ok := userMap[id]
+
+	usr, ok := s.storage.users[id]
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": errUserNotFound})
 		return
 	}
-	usr.mu.RLock()
+	s.storage.mu.RLock()
+	defer s.storage.mu.RUnlock()
 	c.JSON(http.StatusOK, gin.H{"name": usr.Name, "age": usr.Age, "login": usr.Login})
-	usr.mu.RUnlock()
 }
 
-func updateUser(c *gin.Context) {
+func (s *Service) updateUser(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": errors.Wrap(err, "Incorrect user uuid")})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	var input *user
+	var input user
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	usr, ok := userMap[id]
+	usr, ok := s.storage.users[id]
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": errUserNotFound})
 		return
 	}
-	usr.mu.Lock()
-	defer usr.mu.Unlock()
-	updateParams(usr, input)
+
+	s.storage.mu.Lock()
+	s.updateParams(&usr, &input)
+	s.storage.mu.Unlock()
+
 	c.JSON(http.StatusOK, gin.H{"id": id})
 }
 
-func login(c *gin.Context) {
+func (s *Service) login(c *gin.Context) {
 	var input *user
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	id, ok := userLoginMap[input.Login]
+
+	id, ok := s.storage.userLogins[input.Login]
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Login does not exist"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "login does not exist"})
 		return
 	}
 
-	usr := userMap[id]
-	usr.mu.RLock()
+	s.storage.mu.RLock()
+	usr := s.storage.users[id]
 	if usr.Password != input.Password {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Wrong password"})
+		c.JSON(http.StatusForbidden, gin.H{"error": "wrong password"})
 		return
 	}
-	usr.mu.RUnlock()
-	c.JSON(http.StatusOK, gin.H{"id": userLoginMap[input.Login]})
+	s.storage.mu.RUnlock()
+
+	c.JSON(http.StatusOK, gin.H{"id": s.storage.userLogins[input.Login]})
 }
 
-func deleteUser(c *gin.Context) {
+func (s *Service) deleteUser(c *gin.Context) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": errors.Wrap(err, "Incorrect user uuid")})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	usr, ok := userMap[id]
+	usr, ok := s.storage.users[id]
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": errUserNotFound})
 		return
 	}
 
-	usr.mu.Lock()
-	defer usr.mu.Unlock()
-	delete(userLoginMap, usr.Login)
-	delete(userMap, id)
+	s.storage.mu.Lock()
+	delete(s.storage.userLogins, usr.Login)
+	delete(s.storage.users, id)
+	s.storage.mu.Unlock()
+
+	c.JSON(http.StatusOK, gin.H{"message": "user deleted"})
 }
 
-func updateParams(usr, input *user) {
+func (s *Service) updateParams(usr, input *user) {
 	if input.Login != "" {
+		id := s.storage.userLogins[usr.Login]
+		delete(s.storage.userLogins, usr.Login)
 		usr.Login = input.Login
+		s.storage.userLogins[usr.Login] = id
 	}
 	if input.Password != "" {
 		usr.Password = input.Password
@@ -148,5 +174,14 @@ func updateParams(usr, input *user) {
 	}
 	if input.Age != 0 {
 		usr.Age = input.Age
+	}
+}
+
+func NewService() *Service {
+	return &Service{
+		storage: &UserStorage{
+			users:      make(map[uuid.UUID]user),
+			userLogins: make(map[string]uuid.UUID),
+		},
 	}
 }
