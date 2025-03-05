@@ -109,6 +109,7 @@ func (s *Service) updateUser(c *gin.Context) {
 
 	s.storage.mu.Lock()
 	s.updateParams(&usr, &input)
+	s.storage.users[id] = usr
 	s.storage.mu.Unlock()
 
 	c.JSON(http.StatusOK, gin.H{"id": id})
@@ -172,7 +173,7 @@ func (s *Service) updateParams(usr, input *user) {
 	if input.Name != "" {
 		usr.Name = input.Name
 	}
-	if input.Age != 0 {
+	if input.Age > 0 {
 		usr.Age = input.Age
 	}
 }
