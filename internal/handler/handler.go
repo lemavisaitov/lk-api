@@ -16,6 +16,7 @@ type Storage interface {
 	GetUser(ctx context.Context, id uuid.UUID) (model.User, error)
 	GetUserIDByLogin(ctx context.Context, login string) (uuid.NullUUID, error)
 	DeleteUser(ctx context.Context, id uuid.UUID) error
+	Close()
 }
 
 type Handle struct {
@@ -152,4 +153,8 @@ func (h *Handle) loginExists(c *gin.Context, login string) bool {
 		return false
 	}
 	return id.Valid
+}
+
+func (h *Handle) Close() {
+	h.storage.Close()
 }
