@@ -36,15 +36,9 @@ func main() {
 	router.PUT("/user/:id", service.updateUser)
 	router.DELETE("/user/:id", service.deleteUser)
 
-	server := &http.Server{
-		Addr:    ":8080",
-		Handler: router,
-	}
-
-	if err := server.ListenAndServe(); err != nil {
+	if err := router.Run(":8080"); err != nil {
 		panic(err)
 	}
-
 }
 
 func (s *Service) signup(c *gin.Context) {
@@ -61,6 +55,7 @@ func (s *Service) signup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "login already exists"})
 		return
 	}
+
 	id := uuid.New()
 
 	s.storage.mu.Lock()
