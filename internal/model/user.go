@@ -4,15 +4,20 @@ import "github.com/google/uuid"
 
 type User struct {
 	ID       uuid.NullUUID `json:"id"`
-	Login    string        `json:"login"`
-	Password string        `json:"email"`
-	Name     string        `json:"name"`
 	Age      int           `json:"age"`
+	Login    string        `json:"login"`
+	Password string        `json:"password"`
+	Name     string        `json:"name"`
 }
 
 type UpdateUserRequest struct {
 	ID       uuid.UUID `json:"id"`
+	Age      int       `json:"age"`
 	Password string    `json:"password"`
 	Name     string    `json:"name"`
-	Age      int       `json:"age"`
+}
+
+type LoginRequest struct {
+	Login    string `json:"login"`
+	Password string `json:"password"`
 }

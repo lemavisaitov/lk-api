@@ -6,7 +6,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/lemavisaitov/lk-api/internal/app"
 	"github.com/lemavisaitov/lk-api/internal/model"
+	"log"
 	"net/http"
 )
 
@@ -23,7 +25,7 @@ type Handle struct {
 	storage Storage
 }
 
-func New(storage Storage) *Handle {
+func New(storage Storage) app.Handler {
 	return &Handle{
 		storage: storage,
 	}
@@ -40,7 +42,12 @@ func (h *Handle) Signup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "password or name is empty"})
 		return
 	}
-	if !h.loginExists(c, usr.Login) {
+	ok, err := h.loginExists(c, usr.Login)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "login already exists"})
 		return
 	}
@@ -61,14 +68,16 @@ func (h *Handle) Signup(c *gin.Context) {
 }
 
 func (h *Handle) Login(c *gin.Context) {
-	login := c.Param("login")
-	password := c.Param("password")
-
-	userID, err := h.storage.GetUserIDByLogin(c, login)
+	var req model.LoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	log.Printf("login: %s, password: %s", req.Login, req.Password)
+	userID, err := h.storage.GetUserIDByLogin(c, req.Login)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
 		return
 	}
 	if !userID.Valid {
@@ -82,7 +91,7 @@ func (h *Handle) Login(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if user.Password != password {
+	if user.Password != req.Password {
 		c.JSON(http.StatusForbidden, gin.H{"error": "wrong password"})
 		return
 	}
@@ -110,20 +119,29 @@ func (h *Handle) GetUser(c *gin.Context) {
 func (h *Handle) UpdateUser(c *gin.Context) {
 	var req model.UpdateUserRequest
 
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	id, err := h.storage.UpdateUser(c, req)
+
+	req.ID = id
+	u, err := h.storage.UpdateUser(c, req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if !id.Valid {
+	if !u.Valid {
 		c.JSON(http.StatusNotFound, gin.H{"error": "id does not exist"})
+		log.Printf("valid: %v, uuid: %s", u.Valid, u.UUID.String())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"id": id.UUID})
+	c.JSON(http.StatusOK, gin.H{"id": u.UUID})
 }
 
 func (h *Handle) DeleteUser(c *gin.Context) {
@@ -146,13 +164,12 @@ func (h *Handle) DeleteUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"id": id})
 }
 
-func (h *Handle) loginExists(c *gin.Context, login string) bool {
+func (h *Handle) loginExists(c *gin.Context, login string) (bool, error) {
 	id, err := h.storage.GetUserIDByLogin(c, login)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return false
+		return false, err
 	}
-	return id.Valid
+	return id.Valid, nil
 }
 
 func (h *Handle) Close() {
