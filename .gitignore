@@ -23,3 +23,5 @@ go.work
 go.work.sum
 
 .env
+test.http
+.idea
