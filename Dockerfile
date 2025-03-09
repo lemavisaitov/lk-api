@@ -13,6 +13,8 @@ RUN ls -l /app
 FROM alpine:latest
 
 WORKDIR /app
+COPY .env .
+COPY ./migrations .
 COPY --from=builder /app/api-gateway .
 
 ENTRYPOINT ["./api-gateway"]

@@ -3,17 +3,18 @@ package migrations
 import (
 	"database/sql"
 	"embed"
-	"log/slog"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pkg/errors"
 	"github.com/pressly/goose/v3"
+	"log/slog"
 )
 
-//go:embed migrations/*.sql
+//go:embed *.sql
 var migrations embed.FS
 
 func Migrate(url string) error {
+
 	db, err := sql.Open("pgx", url)
 	if err != nil {
 		return errors.Wrap(err, "cannot connect to database")
@@ -31,10 +32,10 @@ func Migrate(url string) error {
 
 	version, err := goose.GetDBVersion(db)
 	if err != nil {
-		return errors.Wrap(err, "cannot get migration version")
+		return errors.Wrap(err, "cannot get migrations version")
 	}
 
-	err = goose.Up(db, "migrations")
+	err = goose.Up(db, ".")
 	if err != nil {
 		if err := goose.DownTo(db, "migrations", version); err != nil {
 			slog.Error(

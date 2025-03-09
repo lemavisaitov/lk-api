@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS users
     age INT NOT NULL CHECK (age > 0)
 );
 
-CREATE INDEX idx_login ON users (login);
+CREATE INDEX IF NOT EXISTS idx_login ON users (login);
 -- +goose StatementEnd
 
 -- +goose Down
