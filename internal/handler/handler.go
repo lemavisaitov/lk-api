@@ -1,48 +1,45 @@
 package handler
 
 import (
-	"context"
 	"errors"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/lemavisaitov/lk-api/internal/app"
 	"github.com/lemavisaitov/lk-api/internal/model"
-	"log"
+	"github.com/lemavisaitov/lk-api/internal/usecase"
 	"net/http"
 )
 
-type Storage interface {
-	UpdateUser(ctx context.Context, request model.UpdateUserRequest) (uuid.NullUUID, error)
-	AddUser(ctx context.Context, usr model.User) error
-	GetUser(ctx context.Context, id uuid.UUID) (model.User, error)
-	GetUserIDByLogin(ctx context.Context, login string) (uuid.NullUUID, error)
-	DeleteUser(ctx context.Context, id uuid.UUID) error
-	Close()
+type Handler interface {
+	Signup(*gin.Context)
+	Login(*gin.Context)
+	GetUser(*gin.Context)
+	UpdateUser(*gin.Context)
+	DeleteUser(*gin.Context)
 }
 
 type Handle struct {
-	storage Storage
+	userUC usecase.UserProvider
 }
 
-func New(storage Storage) app.Handler {
+func New(userProvider usecase.UserProvider) Handler {
 	return &Handle{
-		storage: storage,
+		userUC: userProvider,
 	}
 }
 
 func (h *Handle) Signup(c *gin.Context) {
-	var usr model.User
+	var user model.User
 
-	if err := c.ShouldBindJSON(&usr); err != nil {
+	if err := c.ShouldBindJSON(&user); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if usr.Password == "" || usr.Name == "" {
+	if user.Password == "" || user.Name == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "password or name is empty"})
 		return
 	}
-	ok, err := h.loginExists(c, usr.Login)
+	ok, err := h.userUC.LoginExists(c, user.Login)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -52,19 +49,19 @@ func (h *Handle) Signup(c *gin.Context) {
 		return
 	}
 
-	id, err := uuid.NewV7()
-	if err != nil {
+	if id, err := uuid.NewV7(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-	usr.ID.UUID = id
-	err = h.storage.AddUser(c, usr)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+	} else {
+		user.ID.UUID = id
 	}
 
-	c.JSON(http.StatusOK, gin.H{"id": id})
+	if id, err := h.userUC.AddUser(c, user); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	} else {
+		c.JSON(http.StatusOK, gin.H{"id": id})
+	}
 }
 
 func (h *Handle) Login(c *gin.Context) {
@@ -73,30 +70,26 @@ func (h *Handle) Login(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	log.Printf("login: %s, password: %s", req.Login, req.Password)
-	userID, err := h.storage.GetUserIDByLogin(c, req.Login)
+
+	userID, err := h.userUC.GetUserIDByLogin(c, req.Login)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-	if !userID.Valid {
+	} else if userID == uuid.Nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "login does not exist"})
 		return
 	}
 
-	user, err := h.storage.GetUser(c, userID.UUID)
-
-	if err != nil {
+	if user, err := h.userUC.GetUser(c, userID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-	if user.Password != req.Password {
+	} else if user.Password != req.Password {
 		c.JSON(http.StatusForbidden, gin.H{"error": "wrong password"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"id": userID.UUID})
+	c.JSON(http.StatusOK, gin.H{"id": userID})
 }
 
 func (h *Handle) GetUser(c *gin.Context) {
@@ -106,14 +99,12 @@ func (h *Handle) GetUser(c *gin.Context) {
 		return
 	}
 
-	user, err := h.storage.GetUser(c, id)
-
-	if err != nil {
+	if user, err := h.userUC.GetUser(c, id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	} else {
+		c.JSON(http.StatusOK, gin.H{"name": user.Name, "age": user.Age})
 	}
-
-	c.JSON(http.StatusOK, gin.H{"name": user.Name, "age": user.Age})
 }
 
 func (h *Handle) UpdateUser(c *gin.Context) {
@@ -131,17 +122,15 @@ func (h *Handle) UpdateUser(c *gin.Context) {
 	}
 
 	req.ID = id
-	u, err := h.storage.UpdateUser(c, req)
-	if err != nil {
+
+	if id, err := h.userUC.UpdateUser(c, req); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
-	}
-	if !u.Valid {
+	} else if id == uuid.Nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "id does not exist"})
-		log.Printf("valid: %v, uuid: %s", u.Valid, u.UUID.String())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"id": u.UUID})
+	c.JSON(http.StatusOK, gin.H{"id": id})
 }
 
 func (h *Handle) DeleteUser(c *gin.Context) {
@@ -151,7 +140,7 @@ func (h *Handle) DeleteUser(c *gin.Context) {
 		return
 	}
 
-	err = h.storage.DeleteUser(c, id)
+	err = h.userUC.DeleteUser(c, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "user does not exist"})
@@ -162,16 +151,4 @@ func (h *Handle) DeleteUser(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"id": id})
-}
-
-func (h *Handle) loginExists(c *gin.Context, login string) (bool, error) {
-	id, err := h.storage.GetUserIDByLogin(c, login)
-	if err != nil {
-		return false, err
-	}
-	return id.Valid, nil
-}
-
-func (h *Handle) Close() {
-	h.storage.Close()
 }
