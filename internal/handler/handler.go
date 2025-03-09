@@ -2,12 +2,15 @@ package handler
 
 import (
 	"errors"
+	"log"
+	"net/http"
+
+	"github.com/lemavisaitov/lk-api/internal/model"
+	"github.com/lemavisaitov/lk-api/internal/usecase"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/lemavisaitov/lk-api/internal/model"
-	"github.com/lemavisaitov/lk-api/internal/usecase"
-	"net/http"
 )
 
 type Handler interface {
@@ -22,7 +25,7 @@ type Handle struct {
 	userUC usecase.UserProvider
 }
 
-func New(userProvider usecase.UserProvider) Handler {
+func New(userProvider usecase.UserProvider) *Handle {
 	return &Handle{
 		userUC: userProvider,
 	}
@@ -53,7 +56,7 @@ func (h *Handle) Signup(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	} else {
-		user.ID.UUID = id
+		user.ID = id
 	}
 
 	if id, err := h.userUC.AddUser(c, user); err != nil {
@@ -85,6 +88,7 @@ func (h *Handle) Login(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	} else if user.Password != req.Password {
+		log.Println(user.Password, req.Password)
 		c.JSON(http.StatusForbidden, gin.H{"error": "wrong password"})
 		return
 	}
@@ -102,6 +106,8 @@ func (h *Handle) GetUser(c *gin.Context) {
 	if user, err := h.userUC.GetUser(c, id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	} else if user.ID == uuid.Nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 	} else {
 		c.JSON(http.StatusOK, gin.H{"name": user.Name, "age": user.Age})
 	}

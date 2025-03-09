@@ -2,11 +2,14 @@ package cache
 
 import (
 	"context"
-	"github.com/google/uuid"
-	"github.com/lemavisaitov/lk-api/internal/model"
-	"github.com/lemavisaitov/lk-api/internal/repository"
+	"log"
 	"sync"
 	"time"
+
+	"github.com/lemavisaitov/lk-api/internal/model"
+	"github.com/lemavisaitov/lk-api/internal/repository"
+
+	"github.com/google/uuid"
 )
 
 type userDTOWithTTL struct {
@@ -22,7 +25,7 @@ type CacheDecorator struct {
 	done      chan struct{}
 }
 
-func New(userRepo repository.UserProvider,
+func NewDecorator(userRepo repository.UserProvider,
 	cleanupInterval time.Duration,
 	ttl time.Duration) *CacheDecorator {
 
@@ -59,6 +62,8 @@ func (c *CacheDecorator) getUser(id uuid.UUID) (*userDTOWithTTL, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	val, ok := c.user[id]
+	log.Println(c.user)
+	log.Println(c.userLogin)
 	return val, ok
 }
 
@@ -66,6 +71,8 @@ func (c *CacheDecorator) getUserIDByLogin(login string) (uuid.UUID, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	val, ok := c.userLogin[login]
+	log.Println(c.user)
+	log.Println(c.userLogin)
 	return val, ok
 }
 

@@ -3,11 +3,11 @@ package model
 import "github.com/google/uuid"
 
 type User struct {
-	ID       uuid.NullUUID `json:"id"`
-	Age      int           `json:"age"`
-	Login    string        `json:"login"`
-	Password string        `json:"password"`
-	Name     string        `json:"name"`
+	ID       uuid.UUID `json:"id"`
+	Age      int       `json:"age"`
+	Login    string    `json:"login"`
+	Password string    `json:"password"`
+	Name     string    `json:"name"`
 }
 
 type UpdateUserRequest struct {

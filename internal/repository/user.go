@@ -2,11 +2,14 @@ package repository
 
 import (
 	"context"
+	"log"
+
+	"github.com/lemavisaitov/lk-api/internal/model"
+
 	"github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/lemavisaitov/lk-api/internal/model"
 	"github.com/pkg/errors"
 )
 
@@ -29,13 +32,19 @@ type UserProvider interface {
 }
 
 type UserRepo struct {
-	conn *pgxpool.Pool
+	pool *pgxpool.Pool
+}
+
+func NewUserProvider(pool *pgxpool.Pool) *UserRepo {
+	return &UserRepo{
+		pool: pool,
+	}
 }
 
 func (s *UserRepo) AddUser(ctx context.Context, user model.User) error {
 	builder := squirrel.Insert(tableName).
 		Columns(idColumn, loginColumn, passwordColumn, nameColumn, ageColumn).
-		Values(user.ID, user.Login, user.Password, user.Name).
+		Values(user.ID, user.Login, user.Password, user.Name, user.Age).
 		PlaceholderFormat(squirrel.Dollar)
 
 	query, args, err := builder.ToSql()
@@ -43,7 +52,7 @@ func (s *UserRepo) AddUser(ctx context.Context, user model.User) error {
 		return errors.Wrap(err, "AddUser ToSql")
 	}
 
-	_, err = s.conn.Exec(ctx, query, args...)
+	_, err = s.pool.Exec(ctx, query, args...)
 	if err != nil {
 		return err
 	}
@@ -52,9 +61,10 @@ func (s *UserRepo) AddUser(ctx context.Context, user model.User) error {
 }
 
 func (s *UserRepo) GetUser(ctx context.Context, id uuid.UUID) (model.User, error) {
-	builder := squirrel.Select(idColumn, loginColumn, nameColumn, ageColumn).
+	builder := squirrel.Select(idColumn, loginColumn, passwordColumn, nameColumn, ageColumn).
 		From(tableName).
-		Where(squirrel.Eq{idColumn: id})
+		Where(squirrel.Eq{idColumn: id}).
+		PlaceholderFormat(squirrel.Dollar)
 
 	var user model.User
 
@@ -63,12 +73,13 @@ func (s *UserRepo) GetUser(ctx context.Context, id uuid.UUID) (model.User, error
 		return model.User{}, errors.Wrap(err, "GetUser ToSql")
 	}
 
-	row := s.conn.QueryRow(ctx, query, args)
-
-	err = row.Scan(&user.ID, &user.Login, &user.Name, &user.Age)
+	row := s.pool.QueryRow(ctx, query, args...)
+	log.Println(query)
+	log.Println(args)
+	err = row.Scan(&user.ID, &user.Login, &user.Password, &user.Name, &user.Age)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			user.ID = uuid.NullUUID{}
+			user.ID = uuid.Nil
 			return user, nil
 		}
 
@@ -80,27 +91,32 @@ func (s *UserRepo) GetUser(ctx context.Context, id uuid.UUID) (model.User, error
 
 func (s *UserRepo) UpdateUser(ctx context.Context, toUpdate model.UpdateUserRequest) (uuid.UUID, error) {
 	builder := squirrel.Update("users")
-
+	log.Println(toUpdate)
 	if toUpdate.Name != "" {
-		builder.Set("name", toUpdate.Name)
+		builder = builder.Set(nameColumn, toUpdate.Name)
 	}
 	if toUpdate.Age != 0 {
-		builder.Set("age", toUpdate.Age)
+		builder = builder.Set(ageColumn, toUpdate.Age)
 	}
 	if toUpdate.Password != "" {
-		builder.Set("password", toUpdate.Password)
+		builder = builder.Set(passwordColumn, toUpdate.Password)
 	}
-	builder.Where("id", "=", toUpdate.ID).
+	builder = builder.Where(squirrel.Eq{idColumn: toUpdate.ID}).
+		Suffix("RETURNING " + idColumn).
 		PlaceholderFormat(squirrel.Dollar)
 
 	var id uuid.UUID
 
 	query, args, err := builder.ToSql()
+	log.Println(query)
+	log.Println(args)
 	if err != nil {
 		return uuid.Nil, errors.Wrap(err, "UpdateUser ToSql")
 	}
 
-	err = s.conn.QueryRow(ctx, query, args...).Scan(&id)
+	err = s.pool.QueryRow(ctx, query, args...).Scan(&id)
+	log.Println(err)
+	log.Println(id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return uuid.Nil, nil
@@ -114,7 +130,8 @@ func (s *UserRepo) UpdateUser(ctx context.Context, toUpdate model.UpdateUserRequ
 func (s *UserRepo) GetUserIDByLogin(ctx context.Context, login string) (uuid.UUID, error) {
 	builder := squirrel.Select(idColumn).
 		From(tableName).
-		Where(squirrel.Eq{loginColumn: login})
+		Where(squirrel.Eq{loginColumn: login}).
+		PlaceholderFormat(squirrel.Dollar)
 
 	var id uuid.UUID
 
@@ -123,7 +140,7 @@ func (s *UserRepo) GetUserIDByLogin(ctx context.Context, login string) (uuid.UUI
 		return uuid.Nil, errors.Wrap(err, "GetUser ToSql")
 	}
 
-	row := s.conn.QueryRow(ctx, query, args)
+	row := s.pool.QueryRow(ctx, query, args...)
 
 	if err := row.Scan(&id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -137,14 +154,15 @@ func (s *UserRepo) GetUserIDByLogin(ctx context.Context, login string) (uuid.UUI
 
 func (s *UserRepo) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	builder := squirrel.Delete(tableName).
-		Where(squirrel.Eq{idColumn: id})
+		Where(squirrel.Eq{idColumn: id}).
+		PlaceholderFormat(squirrel.Dollar)
 
 	query, args, err := builder.ToSql()
 	if err != nil {
 		return errors.Wrap(err, "DeleteUser ToSql")
 	}
 
-	if _, err := s.conn.Exec(ctx, query, args); err != nil {
+	if _, err := s.pool.Exec(ctx, query, args...); err != nil {
 		return err
 	}
 
@@ -152,5 +170,5 @@ func (s *UserRepo) DeleteUser(ctx context.Context, id uuid.UUID) error {
 }
 
 func (s *UserRepo) Close() {
-	s.conn.Close()
+	s.pool.Close()
 }

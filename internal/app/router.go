@@ -1,8 +1,12 @@
 package app
 
-import "github.com/gin-gonic/gin"
+import (
+	"github.com/lemavisaitov/lk-api/internal/handler"
 
-func GetRouter(handler Handler) *gin.Engine {
+	"github.com/gin-gonic/gin"
+)
+
+func GetRouter(handler *handler.Handle) *gin.Engine {
 	router := gin.Default()
 
 	router.POST("/user/signup", handler.Signup)

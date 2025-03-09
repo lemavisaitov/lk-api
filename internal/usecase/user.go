@@ -1,10 +1,11 @@
 package usecase
 
 import (
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/lemavisaitov/lk-api/internal/model"
 	"github.com/lemavisaitov/lk-api/internal/repository"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 )
 
@@ -21,22 +22,16 @@ type UserCase struct {
 	userRepo repository.UserProvider
 }
 
-func NewUserCase(userRepo repository.UserProvider) *UserCase {
+func NewUserProvider(userRepo repository.UserProvider) *UserCase {
 	return &UserCase{userRepo: userRepo}
 }
 
 func (u *UserCase) AddUser(c *gin.Context, user model.User) (uuid.UUID, error) {
-	id, err := uuid.NewV7()
 
-	if err != nil {
-		return id, errors.Wrap(err, "error creating uuid")
-	}
-
-	user.ID.UUID = id
 	if err := u.userRepo.AddUser(c, user); err != nil {
-		return id, err
+		return user.ID, err
 	}
-	return id, nil
+	return user.ID, nil
 }
 
 func (u *UserCase) GetUser(c *gin.Context, userID uuid.UUID) (model.User, error) {
@@ -73,9 +68,11 @@ func (u *UserCase) DeleteUser(c *gin.Context, userID uuid.UUID) error {
 }
 
 func (u *UserCase) LoginExists(c *gin.Context, login string) (bool, error) {
-	_, err := u.userRepo.GetUserIDByLogin(c, login)
+	id, err := u.userRepo.GetUserIDByLogin(c, login)
 	if err != nil {
 		return false, err
+	} else if id == uuid.Nil {
+		return false, nil
 	}
 	return true, nil
 }
