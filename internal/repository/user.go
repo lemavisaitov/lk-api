@@ -2,8 +2,6 @@ package repository
 
 import (
 	"context"
-	"log"
-
 	"github.com/lemavisaitov/lk-api/internal/model"
 
 	"github.com/Masterminds/squirrel"
@@ -74,8 +72,6 @@ func (s *UserRepo) GetUser(ctx context.Context, id uuid.UUID) (model.User, error
 	}
 
 	row := s.pool.QueryRow(ctx, query, args...)
-	log.Println(query)
-	log.Println(args)
 	err = row.Scan(&user.ID, &user.Login, &user.Password, &user.Name, &user.Age)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -91,7 +87,6 @@ func (s *UserRepo) GetUser(ctx context.Context, id uuid.UUID) (model.User, error
 
 func (s *UserRepo) UpdateUser(ctx context.Context, toUpdate model.UpdateUserRequest) (uuid.UUID, error) {
 	builder := squirrel.Update("users")
-	log.Println(toUpdate)
 	if toUpdate.Name != "" {
 		builder = builder.Set(nameColumn, toUpdate.Name)
 	}
@@ -108,15 +103,11 @@ func (s *UserRepo) UpdateUser(ctx context.Context, toUpdate model.UpdateUserRequ
 	var id uuid.UUID
 
 	query, args, err := builder.ToSql()
-	log.Println(query)
-	log.Println(args)
 	if err != nil {
 		return uuid.Nil, errors.Wrap(err, "UpdateUser ToSql")
 	}
 
 	err = s.pool.QueryRow(ctx, query, args...).Scan(&id)
-	log.Println(err)
-	log.Println(id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return uuid.Nil, nil

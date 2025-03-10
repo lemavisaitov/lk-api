@@ -2,7 +2,6 @@ package cache
 
 import (
 	"context"
-	"log"
 	"sync"
 	"time"
 
@@ -30,24 +29,24 @@ func NewDecorator(userRepo repository.UserProvider,
 	ttl time.Duration) *CacheDecorator {
 
 	cache := &CacheDecorator{
-		userRepo: userRepo,
-		user:     make(map[uuid.UUID]*userDTOWithTTL, 10000),
+		userRepo:  userRepo,
+		user:      make(map[uuid.UUID]*userDTOWithTTL, 10000),
+		userLogin: make(map[string]uuid.UUID, 10000),
 	}
 
-	ticker := time.NewTicker(cleanupInterval)
-
 	go func() {
+		ticker := time.NewTicker(cleanupInterval)
 		for {
 			select {
 			case <-ticker.C:
+				cache.mu.Lock()
 				for key, val := range cache.user {
-					cache.mu.Lock()
-					if time.Now().Unix()-val.lastUsage > int64(ttl) {
+					if time.Now().Unix()-val.lastUsage >= int64(ttl.Seconds()) {
 						delete(cache.userLogin, val.user.Login)
 						delete(cache.user, key)
 					}
-					cache.mu.Unlock()
 				}
+				cache.mu.Unlock()
 			case <-cache.done:
 				ticker.Stop()
 				return
@@ -62,8 +61,6 @@ func (c *CacheDecorator) getUser(id uuid.UUID) (*userDTOWithTTL, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	val, ok := c.user[id]
-	log.Println(c.user)
-	log.Println(c.userLogin)
 	return val, ok
 }
 
@@ -71,8 +68,6 @@ func (c *CacheDecorator) getUserIDByLogin(login string) (uuid.UUID, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	val, ok := c.userLogin[login]
-	log.Println(c.user)
-	log.Println(c.userLogin)
 	return val, ok
 }
 
@@ -83,6 +78,7 @@ func (c *CacheDecorator) setUser(id uuid.UUID, user *model.User) {
 		user:      *user,
 		lastUsage: time.Now().Unix(),
 	}
+	c.userLogin[user.Login] = id
 }
 
 func (c *CacheDecorator) GetUser(ctx context.Context, userID uuid.UUID) (model.User, error) {
