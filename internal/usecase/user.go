@@ -6,14 +6,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/pkg/errors"
 )
 
 type UserProvider interface {
-	AddUser(*gin.Context, model.User) (uuid.UUID, error)
-	GetUser(*gin.Context, uuid.UUID) (model.User, error)
-	GetUserIDByLogin(*gin.Context, string) (uuid.UUID, error)
-	UpdateUser(*gin.Context, model.UpdateUserRequest) (uuid.UUID, error)
+	AddUser(*gin.Context, model.User) (*uuid.UUID, error)
+	GetUser(*gin.Context, uuid.UUID) (*model.User, error)
+	GetUserIDByLogin(*gin.Context, string) (*uuid.UUID, error)
+	UpdateUser(*gin.Context, model.UpdateUserRequest) (*uuid.UUID, error)
 	DeleteUser(*gin.Context, uuid.UUID) error
 	LoginExists(*gin.Context, string) (bool, error)
 }
@@ -26,35 +25,35 @@ func NewUserProvider(userRepo repository.UserProvider) *UserCase {
 	return &UserCase{userRepo: userRepo}
 }
 
-func (u *UserCase) AddUser(c *gin.Context, user model.User) (uuid.UUID, error) {
+func (u *UserCase) AddUser(c *gin.Context, user model.User) (*uuid.UUID, error) {
 
 	if err := u.userRepo.AddUser(c, user); err != nil {
-		return user.ID, err
+		return nil, err
 	}
-	return user.ID, nil
+	return &user.ID, nil
 }
 
-func (u *UserCase) GetUser(c *gin.Context, userID uuid.UUID) (model.User, error) {
+func (u *UserCase) GetUser(c *gin.Context, userID uuid.UUID) (*model.User, error) {
 	user, err := u.userRepo.GetUser(c, userID)
 	if err != nil {
-		return user, err
+		return nil, err
 	}
 
 	return user, nil
 }
 
-func (u *UserCase) UpdateUser(c *gin.Context, req model.UpdateUserRequest) (uuid.UUID, error) {
+func (u *UserCase) UpdateUser(c *gin.Context, req model.UpdateUserRequest) (*uuid.UUID, error) {
 	id, err := u.userRepo.UpdateUser(c, req)
 	if err != nil {
-		return id, errors.Wrap(err, "error updating user")
+		return nil, err
 	}
 	return id, nil
 }
 
-func (u *UserCase) GetUserIDByLogin(c *gin.Context, login string) (uuid.UUID, error) {
+func (u *UserCase) GetUserIDByLogin(c *gin.Context, login string) (*uuid.UUID, error) {
 	id, err := u.userRepo.GetUserIDByLogin(c, login)
 	if err != nil {
-		return id, err
+		return nil, err
 	}
 
 	return id, nil
@@ -68,12 +67,11 @@ func (u *UserCase) DeleteUser(c *gin.Context, userID uuid.UUID) error {
 }
 
 func (u *UserCase) LoginExists(c *gin.Context, login string) (bool, error) {
-	id, err := u.userRepo.GetUserIDByLogin(c, login)
+	_, err := u.userRepo.GetUserIDByLogin(c, login)
 	if err != nil {
 		return false, err
-	} else if id == uuid.Nil {
-		return false, nil
 	}
+
 	return true, nil
 }
 

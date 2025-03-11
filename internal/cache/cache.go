@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"github.com/pkg/errors"
 	"sync"
 	"time"
 
@@ -11,9 +12,13 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	cacheInitCapacity = 10000
+)
+
 type userDTOWithTTL struct {
-	user      model.User
-	lastUsage int64
+	user       *model.User
+	lastUsedAt time.Time
 }
 
 type CacheDecorator struct {
@@ -26,35 +31,43 @@ type CacheDecorator struct {
 
 func NewDecorator(userRepo repository.UserProvider,
 	cleanupInterval time.Duration,
-	ttl time.Duration) *CacheDecorator {
+	ttl time.Duration) (*CacheDecorator, error) {
+
+	if userRepo == nil {
+		return nil, errors.New("userRepo cannot be nil")
+	}
 
 	cache := &CacheDecorator{
 		userRepo:  userRepo,
-		user:      make(map[uuid.UUID]*userDTOWithTTL, 10000),
-		userLogin: make(map[string]uuid.UUID, 10000),
+		user:      make(map[uuid.UUID]*userDTOWithTTL, cacheInitCapacity),
+		userLogin: make(map[string]uuid.UUID, cacheInitCapacity),
 	}
 
+	cache.runJanitor(cleanupInterval, ttl)
+
+	return cache, nil
+}
+
+func (c *CacheDecorator) runJanitor(cleanupInterval time.Duration, ttl time.Duration) {
 	go func() {
 		ticker := time.NewTicker(cleanupInterval)
 		for {
 			select {
 			case <-ticker.C:
-				cache.mu.Lock()
-				for key, val := range cache.user {
-					if time.Now().Unix()-val.lastUsage >= int64(ttl.Seconds()) {
-						delete(cache.userLogin, val.user.Login)
-						delete(cache.user, key)
+				c.mu.Lock()
+				for key, val := range c.user {
+					if val.lastUsedAt.Add(ttl).After(time.Now()) {
+						delete(c.userLogin, val.user.Login)
+						delete(c.user, key)
 					}
 				}
-				cache.mu.Unlock()
-			case <-cache.done:
+				c.mu.Unlock()
+			case <-c.done:
 				ticker.Stop()
 				return
 			}
 		}
 	}()
-
-	return cache
 }
 
 func (c *CacheDecorator) getUser(id uuid.UUID) (*userDTOWithTTL, bool) {
@@ -75,15 +88,15 @@ func (c *CacheDecorator) setUser(id uuid.UUID, user *model.User) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.user[id] = &userDTOWithTTL{
-		user:      *user,
-		lastUsage: time.Now().Unix(),
+		user:       user,
+		lastUsedAt: time.Now(),
 	}
 	c.userLogin[user.Login] = id
 }
 
-func (c *CacheDecorator) GetUser(ctx context.Context, userID uuid.UUID) (model.User, error) {
+func (c *CacheDecorator) GetUser(ctx context.Context, userID uuid.UUID) (*model.User, error) {
 	if user, ok := c.getUser(userID); ok {
-		user.lastUsage = time.Now().Unix()
+		user.lastUsedAt = time.Now()
 		return user.user, nil
 	}
 
@@ -92,49 +105,49 @@ func (c *CacheDecorator) GetUser(ctx context.Context, userID uuid.UUID) (model.U
 		return user, err
 	}
 
-	c.setUser(userID, &user)
+	c.setUser(userID, user)
 	return user, nil
 }
 
-func (c *CacheDecorator) GetUserIDByLogin(ctx context.Context, login string) (uuid.UUID, error) {
+func (c *CacheDecorator) GetUserIDByLogin(ctx context.Context, login string) (*uuid.UUID, error) {
 	if id, ok := c.getUserIDByLogin(login); ok {
-		return id, nil
+		return &id, nil
 	}
 
 	id, err := c.userRepo.GetUserIDByLogin(ctx, login)
 	if err != nil {
-		return uuid.Nil, err
+		return nil, err
 	}
 
 	return id, nil
 }
 
-func (c *CacheDecorator) UpdateUser(ctx context.Context, req model.UpdateUserRequest) (uuid.UUID, error) {
+func (c *CacheDecorator) UpdateUser(ctx context.Context, req model.UpdateUserRequest) (*uuid.UUID, error) {
 	if user, ok := c.getUser(req.ID); ok {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		id, err := c.userRepo.UpdateUser(ctx, req)
 		if err != nil {
-			return uuid.Nil, err
+			return nil, err
 		}
-		user.user, err = c.userRepo.GetUser(ctx, id)
+		user.user, err = c.userRepo.GetUser(ctx, *id)
 		if err != nil {
-			return uuid.Nil, err
+			return nil, err
 		}
-		user.lastUsage = time.Now().Unix()
+		user.lastUsedAt = time.Now()
 		return id, nil
 	}
 
 	id, err := c.userRepo.UpdateUser(ctx, req)
 	if err != nil {
-		return uuid.Nil, err
+		return nil, err
 	}
-	user, err := c.userRepo.GetUser(ctx, id)
+	user, err := c.userRepo.GetUser(ctx, *id)
 	if err != nil {
-		return uuid.Nil, err
+		return nil, err
 	}
 
-	c.setUser(id, &user)
+	c.setUser(*id, user)
 	return id, nil
 }
 

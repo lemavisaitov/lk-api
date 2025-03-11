@@ -22,7 +22,7 @@ services:
   api-gateway:
     build: ./
     ports:
-      - "8081:${API_PORT}"
+      - "8081:${APP_ADDRESS}"
     depends_on:
       postgres:
         condition: service_healthy
