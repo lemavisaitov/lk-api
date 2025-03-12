@@ -1,9 +1,8 @@
 package app
 
 import (
-	"github.com/lemavisaitov/lk-api/internal/handler"
-
 	"github.com/gin-gonic/gin"
+	"github.com/lemavisaitov/lk-api/internal/handler"
 )
 
 func GetRouter(handler *handler.Handle) *gin.Engine {
