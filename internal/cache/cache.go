@@ -2,9 +2,12 @@ package cache
 
 import (
 	"context"
+	"github.com/lemavisaitov/lk-api/internal/logger"
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/lemavisaitov/lk-api/internal/model"
 	"github.com/lemavisaitov/lk-api/internal/repository"
@@ -56,7 +59,11 @@ func (c *CacheDecorator) runJanitor(cleanupInterval time.Duration, ttl time.Dura
 			case <-ticker.C:
 				c.mu.Lock()
 				for key, val := range c.user {
-					if val.lastUsedAt.Add(ttl).After(time.Now()) {
+					if val.lastUsedAt.Add(ttl).Before(time.Now()) {
+						logger.Debug("cleanup expired user",
+							zap.String("userID", key.String()),
+							zap.String("user login", val.user.Login),
+						)
 						delete(c.userLogin, val.user.Login)
 						delete(c.user, key)
 					}
@@ -167,6 +174,36 @@ func (c *CacheDecorator) DeleteUser(ctx context.Context, id uuid.UUID) error {
 
 func (c *CacheDecorator) AddUser(ctx context.Context, user model.User) error {
 	return c.userRepo.AddUser(ctx, user)
+}
+
+func (c *CacheDecorator) MemoryUsage() uint64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	var size uint64
+
+	// Размер самой структуры
+	size += uint64(unsafe.Sizeof(*c))
+
+	// Размер карты user (хеш-таблица + ключи + значения)
+	size += uint64(unsafe.Sizeof(c.user))
+	for k, v := range c.user {
+		size += uint64(unsafe.Sizeof(k)) + uint64(unsafe.Sizeof(*v))
+		if v.user != nil {
+			size += uint64(unsafe.Sizeof(*v.user)) // Размер userDTOWithTTL
+			size += uint64(len(v.user.Login))
+			size += uint64(len(v.user.Password))
+			size += uint64(len(v.user.Name))
+		}
+	}
+
+	// Размер карты userLogin (ключи строки + UUID)
+	size += uint64(unsafe.Sizeof(c.userLogin))
+	for k, v := range c.userLogin {
+		size += uint64(len(k)) + uint64(unsafe.Sizeof(v)) // Строка (длина) + UUID
+	}
+
+	return size
 }
 
 func (c *CacheDecorator) Close() {

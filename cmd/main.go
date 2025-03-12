@@ -7,12 +7,15 @@ import (
 	"github.com/lemavisaitov/lk-api/internal/app"
 	"github.com/lemavisaitov/lk-api/internal/cache"
 	"github.com/lemavisaitov/lk-api/internal/handler"
+	"github.com/lemavisaitov/lk-api/internal/logger"
+	"github.com/lemavisaitov/lk-api/internal/metrics"
 	"github.com/lemavisaitov/lk-api/internal/repository"
 	"github.com/lemavisaitov/lk-api/internal/storage"
 	"github.com/lemavisaitov/lk-api/internal/usecase"
 	"github.com/lemavisaitov/lk-api/migrations"
+	"github.com/pkg/errors"
+	"go.uber.org/zap"
 	"log"
-	"log/slog"
 )
 
 func main() {
@@ -21,24 +24,36 @@ func main() {
 		log.Fatal(err)
 	}
 
+	if err := logger.Init(cfg.LogLevel); err != nil {
+		log.Fatal(err)
+	}
+
 	connStr := cfg.GetDBConnStr()
-	slog.Info(fmt.Sprintf("Connecting to database: %s", connStr))
+	logger.Info("connecting to database",
+		zap.String("connection string", connStr),
+	)
 
 	ctx := context.Background()
 	withTimeout, cancel := context.WithTimeout(ctx, cfg.DBConnTimeout)
 	defer cancel()
 
 	if err := migrations.Migrate(connStr); err != nil {
-		log.Fatal(err)
+		logger.Fatal("error while migrating database",
+			zap.Error(errors.Wrap(err, "")),
+		)
 	}
 	pool, err := storage.GetConnect(withTimeout, connStr)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal("error while connecting to storage",
+			zap.Error(errors.Wrap(err, "")),
+		)
 	}
 	userRepo := repository.NewUserProvider(pool)
-	cacheProvider, err := cache.NewDecorator(userRepo, cfg.CacheInterval, cfg.CacheTTL)
+	cacheProvider, err := cache.NewDecorator(userRepo, cfg.CacheCleanupInterval, cfg.CacheTTL)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal("error while initializing cache",
+			zap.Error(errors.Wrap(err, "")),
+		)
 	}
 	defer cacheProvider.Close()
 
@@ -46,7 +61,11 @@ func main() {
 	handle := handler.New(userUC)
 	router := app.GetRouter(handle)
 
+	metrics.InitMetrics(cfg.MetricsAddress, cacheProvider)
+
 	if err := router.Run(fmt.Sprintf(":%s", cfg.AppAddress)); err != nil {
-		log.Fatal(err)
+		logger.Fatal("error while starting server",
+			zap.Error(errors.Wrap(err, "")),
+		)
 	}
 }
