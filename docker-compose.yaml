@@ -1,6 +1,8 @@
 services:
   postgres:
     image: postgres:14.10-alpine
+    env_file:
+      - .env
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -16,18 +18,16 @@ services:
       timeout: 1s
       retries: 5
       start_period: 1s
-    env_file:
-      - .env
 
   api-gateway:
     build: ./
+    env_file:
+      - .env
     ports:
       - "8081:${APP_ADDRESS}"
     depends_on:
       postgres:
         condition: service_healthy
-    env_file:
-      - .env
 
   prometheus:
     image: prom/prometheus:v2.55.1

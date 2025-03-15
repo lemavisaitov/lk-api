@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
+
 	"github.com/lemavisaitov/lk-api/config"
 	"github.com/lemavisaitov/lk-api/internal/app"
 	"github.com/lemavisaitov/lk-api/internal/cache"
@@ -13,9 +15,9 @@ import (
 	"github.com/lemavisaitov/lk-api/internal/storage"
 	"github.com/lemavisaitov/lk-api/internal/usecase"
 	"github.com/lemavisaitov/lk-api/migrations"
+
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
-	"log"
 )
 
 func main() {
@@ -56,6 +58,7 @@ func main() {
 		)
 	}
 	defer cacheProvider.Close()
+	defer pool.Close()
 
 	userUC := usecase.NewUserProvider(cacheProvider)
 	handle := handler.New(userUC)

@@ -1,0 +1,28 @@
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - goimports
+    - bodyclose
+    - copyloopvar
+    - sloglint
+    - unconvert
+    - gosec
+    - noctx
+    - gocritic
+    - testifylint
+    - goconst
+    - nilerr
+    - contextcheck
+    - whitespace
+
+linters-settings:
+  errcheck:
+    check-blank: true     # Проверка игнорирования ошибок через _
