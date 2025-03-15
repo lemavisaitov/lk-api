@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+
 	"github.com/lemavisaitov/lk-api/internal/apperr"
 	"github.com/lemavisaitov/lk-api/internal/model"
 
@@ -20,15 +21,6 @@ const (
 	nameColumn     = "name"
 	ageColumn      = "age"
 )
-
-type UserProvider interface {
-	UpdateUser(context.Context, model.UpdateUserRequest) (*uuid.UUID, error)
-	AddUser(context.Context, model.User) error
-	GetUser(context.Context, uuid.UUID) (*model.User, error)
-	GetUserIDByLogin(context.Context, string) (*uuid.UUID, error)
-	DeleteUser(context.Context, uuid.UUID) error
-	Close()
-}
 
 type UserRepo struct {
 	pool *pgxpool.Pool
@@ -77,9 +69,7 @@ func (s *UserRepo) GetUser(ctx context.Context, id uuid.UUID) (*model.User, erro
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			user.ID = uuid.Nil
-			return nil, apperr.NotFoundError{
-				Err: errors.New("User not found"),
-			}
+			return nil, errors.Wrap(apperr.ErrNotFound, "id not found, GetUser repository")
 		}
 
 		return nil, errors.Wrap(err, "GetUser Scan")
@@ -113,9 +103,7 @@ func (s *UserRepo) UpdateUser(ctx context.Context, toUpdate model.UpdateUserRequ
 	err = s.pool.QueryRow(ctx, query, args...).Scan(&id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, apperr.NotFoundError{
-				Err: errors.Wrap(err, "User ID not found"),
-			}
+			return nil, errors.Wrap(apperr.ErrNotFound, "User ID not found")
 		}
 		return nil, errors.Wrap(err, "UpdateUser Scan")
 	}
@@ -140,7 +128,7 @@ func (s *UserRepo) GetUserIDByLogin(ctx context.Context, login string) (*uuid.UU
 
 	if err := row.Scan(&id); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, errors.Wrap(err, "Login not found").(apperr.NotFoundError)
+			return nil, errors.Wrap(apperr.ErrNotFound, "login not found")
 		}
 		return nil, errors.Wrap(err, "GetUser Scan")
 	}
@@ -160,16 +148,10 @@ func (s *UserRepo) DeleteUser(ctx context.Context, id uuid.UUID) error {
 
 	if _, err := s.pool.Exec(ctx, query, args...); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return apperr.NotFoundError{
-				Err: errors.Wrap(err, "User ID not found"),
-			}
+			return errors.Wrap(apperr.ErrNotFound, "User ID not found")
 		}
 		return errors.Wrap(err, "DeleteUser Exec")
 	}
 
 	return nil
-}
-
-func (s *UserRepo) Close() {
-	s.pool.Close()
 }

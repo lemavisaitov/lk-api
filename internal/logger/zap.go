@@ -3,6 +3,7 @@ package logger
 import (
 	"os"
 
+	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -30,8 +31,8 @@ func Fatal(msg string, fields ...zapcore.Field) {
 	global.log.Fatal(msg, fields...)
 }
 
-func Stop() {
-	_ = global.log.Sync()
+func Stop() error {
+	return global.log.Sync()
 }
 
 func Init(logLevel string) error {
@@ -61,7 +62,10 @@ func Init(logLevel string) error {
 	cEncoder := zapcore.NewConsoleEncoder(cfg) // вывод в консоль
 	fEncoder := zapcore.NewConsoleEncoder(cfg) // вывод в файл
 
-	lvl, _ := zapcore.ParseLevel(logLevel)
+	lvl, err := zapcore.ParseLevel(logLevel)
+	if err != nil {
+		return errors.Wrap(err, "failed to parse log level")
+	}
 	core := zapcore.NewTee(
 		zapcore.NewCore(cEncoder, zapcore.AddSync(os.Stdout), lvl),
 		zapcore.NewCore(fEncoder, fileSync, lvl),

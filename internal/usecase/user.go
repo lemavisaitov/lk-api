@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/pkg/errors"
 )
 
 type UserProvider interface {
@@ -26,9 +27,8 @@ func NewUserProvider(userRepo repository.UserProvider) *UserCase {
 }
 
 func (u *UserCase) AddUser(c *gin.Context, user model.User) (*uuid.UUID, error) {
-
 	if err := u.userRepo.AddUser(c, user); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "usecase AddUser")
 	}
 	return &user.ID, nil
 }
@@ -36,7 +36,7 @@ func (u *UserCase) AddUser(c *gin.Context, user model.User) (*uuid.UUID, error) 
 func (u *UserCase) GetUser(c *gin.Context, userID uuid.UUID) (*model.User, error) {
 	user, err := u.userRepo.GetUser(c, userID)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "usecase GetUser")
 	}
 
 	return user, nil
@@ -45,7 +45,7 @@ func (u *UserCase) GetUser(c *gin.Context, userID uuid.UUID) (*model.User, error
 func (u *UserCase) UpdateUser(c *gin.Context, req model.UpdateUserRequest) (*uuid.UUID, error) {
 	id, err := u.userRepo.UpdateUser(c, req)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "usecase UpdateUser")
 	}
 	return id, nil
 }
@@ -53,7 +53,7 @@ func (u *UserCase) UpdateUser(c *gin.Context, req model.UpdateUserRequest) (*uui
 func (u *UserCase) GetUserIDByLogin(c *gin.Context, login string) (*uuid.UUID, error) {
 	id, err := u.userRepo.GetUserIDByLogin(c, login)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "usecase GetUserUserIDByLogin")
 	}
 
 	return id, nil
@@ -61,7 +61,7 @@ func (u *UserCase) GetUserIDByLogin(c *gin.Context, login string) (*uuid.UUID, e
 
 func (u *UserCase) DeleteUser(c *gin.Context, userID uuid.UUID) error {
 	if err := u.userRepo.DeleteUser(c, userID); err != nil {
-		return err
+		return errors.Wrap(err, "usecase DeleteUser")
 	}
 	return nil
 }
@@ -69,12 +69,8 @@ func (u *UserCase) DeleteUser(c *gin.Context, userID uuid.UUID) error {
 func (u *UserCase) LoginExists(c *gin.Context, login string) (bool, error) {
 	_, err := u.userRepo.GetUserIDByLogin(c, login)
 	if err != nil {
-		return false, err
+		return false, errors.Wrap(err, "usecase LoginExists")
 	}
 
 	return true, nil
-}
-
-func (u *UserCase) Close() {
-	u.userRepo.Close()
 }

@@ -1,7 +1,6 @@
 package metrics
 
 import (
-	"github.com/gin-gonic/gin"
 	"github.com/lemavisaitov/lk-api/internal/cache"
 	"github.com/lemavisaitov/lk-api/internal/logger"
 	"github.com/pkg/errors"
@@ -66,13 +65,8 @@ func InitMetrics(port string, cache *cache.CacheDecorator) {
 	}()
 }
 
-func PrometheusMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		statusCode := c.Writer.Status()
-		method := c.Request.Method
-		HttpStatusMetric.WithLabelValues(http.StatusText(statusCode), method).Inc()
-		c.Next()
-	}
+func HttpStatusMetricInc(statusCode int, method string) {
+	HttpStatusMetric.WithLabelValues(http.StatusText(statusCode), method).Inc()
 }
 
 var c *cache.CacheDecorator
