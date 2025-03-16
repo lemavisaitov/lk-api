@@ -43,6 +43,7 @@ func NewDecorator(userRepo repository.UserProvider,
 		userRepo:  userRepo,
 		user:      make(map[uuid.UUID]*userDTOWithTTL, cacheInitCapacity),
 		userLogin: make(map[string]uuid.UUID, cacheInitCapacity),
+		done:      make(chan struct{}),
 	}
 
 	cache.runCleaner(cleanupInterval, ttl)
@@ -107,6 +108,7 @@ func (c *CacheDecorator) setUser(id uuid.UUID, user *model.User) {
 func (c *CacheDecorator) deleteUser(id uuid.UUID) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	delete(c.userLogin, c.user[id].user.Login)
 	delete(c.user, id)
 }
 
@@ -169,6 +171,10 @@ func (c *CacheDecorator) AddUser(ctx context.Context, user model.User) error {
 	return errors.Wrap(err, "from AddUser in CacheDecorator")
 }
 
+func (c *CacheDecorator) Close() {
+	close(c.done)
+}
+
 func (c *CacheDecorator) copy() *CacheDecorator {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -224,8 +230,4 @@ func (c *CacheDecorator) MemoryUsage() uint64 {
 	}
 
 	return size
-}
-
-func (c *CacheDecorator) Close() {
-	c.done <- struct{}{}
 }
