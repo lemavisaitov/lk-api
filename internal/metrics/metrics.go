@@ -1,15 +1,17 @@
 package metrics
 
 import (
+	"net/http"
+	"runtime"
+	"time"
+
 	"github.com/lemavisaitov/lk-api/internal/cache"
 	"github.com/lemavisaitov/lk-api/internal/logger"
+
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
-
-	"net/http"
-	"runtime"
 )
 
 var (
@@ -58,7 +60,13 @@ func InitMetrics(port string, cache *cache.CacheDecorator) {
 		logger.Info("starting metrics server",
 			zap.String("port", port),
 		)
-		if err := http.ListenAndServe(":"+port, nil); err != nil {
+		server := &http.Server{
+			Addr:         ":" + port,
+			ReadTimeout:  5 * time.Second,   // Таймаут чтения
+			WriteTimeout: 10 * time.Second,  // Таймаут записи
+			IdleTimeout:  120 * time.Second, // Таймаут простоя
+		}
+		if err := server.ListenAndServe(); err != nil {
 			logger.Fatal("Failed to start metrics server: %v",
 				zap.Error(errors.Wrap(err, "")))
 		}
