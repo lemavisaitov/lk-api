@@ -1,0 +1,46 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+      - api
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:14.10-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testdb
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd="pg_isready"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.24.1 # Укажите версию Go, которую вы используете
+          cache-dependency-path: go.sum
+
+      - name: Install dependencies
+        run: |
+          go mod download
+
+      - name: Run integration tests
+        run: |
+          export DATABASE_URL="postgres://postgres:postgres@localhost:5432/testdb?sslmode=disable"
+          go test -v -race ./... -tags=integration
