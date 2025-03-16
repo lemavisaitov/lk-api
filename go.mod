@@ -1,6 +1,6 @@
 module github.com/lemavisaitov/lk-api
 
-go 1.23.3
+go 1.24.1
 
 require (
 	github.com/Masterminds/squirrel v1.5.4
